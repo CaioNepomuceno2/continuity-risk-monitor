@@ -1,0 +1,200 @@
+# Monitor de risco regulatório de continuidade (DEC/FEC)
+
+[![CI](https://github.com/CaioNepomuceno2/continuity-risk-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/CaioNepomuceno2/continuity-risk-monitor/actions/workflows/ci.yml)
+[![monitor](https://github.com/CaioNepomuceno2/continuity-risk-monitor/actions/workflows/monitor.yml/badge.svg)](https://github.com/CaioNepomuceno2/continuity-risk-monitor/actions/workflows/monitor.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Dados: ANEEL](https://img.shields.io/badge/dados-ANEEL%20(abertos)-0b7a75)
+
+**No meio do ano, quais conjuntos de unidades consumidoras vão estourar o limite anual de DEC/FEC até
+dezembro, com que probabilidade, e quanto isso deve custar em compensações? Onde agir agora?**
+
+Um robô mensal baixa os indicadores abertos da ANEEL dos **~3.200 conjuntos de todas as distribuidoras do
+Brasil** e calcula, para cada conjunto, a probabilidade de fechar o ano acima do limite e o R$ de compensação
+esperado até dezembro. O resultado sai em CSV, num painel Streamlit e num modelo estrela pronto para o
+Power BI.
+
+## Resultados em uma tela
+
+Backtest 2021-2025: para cada ano, o modelo é treinado só com anos anteriores e recebe apenas os meses até
+o corte. A taxa média de violação do limite de DEC no período foi de 33%.
+
+| Violação do limite de DEC, corte em **junho** | Modelo | Extrapolação linear | Fração sazonal histórica | "Violou no ano passado" |
+|---|---|---|---|---|
+| AUC | **0,960** | 0,951 | 0,945 | 0,886 |
+| Brier score (menor é melhor) | **0,073** | 0,086 | 0,090 | 0,129 |
+| Erro de calibração (ECE) | **0,027** | 0,064 | 0,056 | 0,065 |
+| Precisão dos conjuntos sinalizados | **85%** | 77% | 79% | 68% |
+| Recall (violações identificadas) | 84% | **88%** | 85% | 80% |
+
+* **Em junho, o modelo identifica 84% das violações de DEC do ano, e 85% dos conjuntos que ele sinaliza de
+  fato violam.** A extrapolação linear acha um pouco mais (88%), mas erra mais: só 77% dos alertas dela se
+  confirmam.
+* **A vantagem é maior cedo no ano.** Em março, o Brier cai de 0,118 (extrapolação) para 0,093 (−21%), e a
+  precisão sobe de 61% para 81%. Em setembro, com o ano quase fechado, as regras simples praticamente
+  alcançam o modelo.
+* O modelo tem o melhor AUC e o melhor Brier em cada um dos cinco anos de teste no corte de junho
+  ([`reports/backtest_por_ano.csv`](reports/backtest_por_ano.csv)).
+* **A probabilidade é bem calibrada** (ECE de 0,03 contra 0,06 das regras convertidas em probabilidade), o que
+  permite somar probabilidades em "violações esperadas". Na faixa de 40% a 85%, o modelo superestima o risco
+  em cerca de 5 a 10 pontos ([`reports/figures/02_calibracao_junho.png`](reports/figures/02_calibracao_junho.png)).
+
+![backtest](reports/figures/01_backtest_brier.png)
+
+### 2026 (execução de 02/11/2026; dados até junho, julho ou agosto, conforme o conjunto)
+
+| | |
+|---|---|
+| Conjuntos monitorados | 3.177 |
+| Violações esperadas no ano | **840 de DEC** e 381 de FEC |
+| Conjuntos com P(violar DEC ou FEC) ≥ 50% | **831**, dos quais **681 ainda estão dentro do limite** (dá para agir) |
+| Compensações já pagas no ano | R$ 596,9 mi |
+| Compensações esperadas até dezembro | R$ 486,7 mi (o modelo subestimou o total em ~15% no backtest) |
+
+**Energisa MS e MT:**
+
+| | Energisa MS | Energisa MT |
+|---|---|---|
+| Conjuntos | 61 | 88 |
+| Conjuntos com risco alto (P ≥ 50%) | 7 (1 já acima do limite: Aquidauana) | 15 (todos ainda dentro do limite) |
+| Violações de DEC esperadas | 10,5 | 17,0 |
+| Compensação esperada até dezembro | R$ 13,1 mi | **R$ 38,9 mi** (4ª maior do país) |
+
+![Energisa MS e MT](reports/figures/05_energisa_ms_mt.png)
+
+A lista completa, conjunto a conjunto, está em [`reports/energisa_ms_mt_2026.csv`](reports/energisa_ms_mt_2026.csv)
+e o resumo que o robô publica todo mês, em [`reports/resumo.md`](reports/resumo.md). Os números de 2026
+acima são da execução de 02/11/2026; os arquivos em `reports/` são regravados pelo robô a cada mês (e variam
+na terceira casa entre execuções, pelo paralelismo do LightGBM).
+
+## 1. O que o histórico mostra
+
+![histórico](reports/figures/03_historico.png)
+
+* A fração de conjuntos acima do limite de DEC caiu de **60% em 2015 para 26% em 2025**, mas as compensações
+  pagas subiram de R$ 0,66 bi para **R$ 1,0 a 1,1 bi por ano em 2023-2025** (valores nominais).
+* O motivo é que a compensação é **individual** (DIC, FIC, DMIC, DICRI por consumidor), não coletiva:
+  **46% das compensações de 2021-2025 foram pagas em conjuntos que fecharam o ano abaixo do limite de DEC**
+  ([`reports/compensacao_vs_violacao.csv`](reports/compensacao_vs_violacao.csv)). Ainda assim, o valor médio
+  por conjunto cresce com o DEC: R$ 85 mil/ano nos conjuntos abaixo de 50% do limite e R$ 979 mil/ano nos
+  acima de 2 vezes o limite.
+
+## 2. Previsão de compensação
+
+Para o R$ de compensação de m+1 a dezembro, o modelo tem o menor erro absoluto por conjunto nos três cortes
+([`reports/backtest_compensacao.csv`](reports/backtest_compensacao.csv)):
+
+| Erro absoluto médio por conjunto | Março | Junho | Setembro |
+|---|---|---|---|
+| Modelo (LightGBM Tweedie) | **R$ 93 mil** | **R$ 73 mil** | **R$ 51 mil** |
+| Extrapolação linear do pago no ano | R$ 162 mil | R$ 85 mil | R$ 55 mil |
+| Média dos últimos 5 anos | R$ 101 mil | R$ 81 mil | R$ 57 mil |
+
+No total do país, o modelo **subestima** o restante do ano em ~15% (o valor cresceu ano a ano no período).
+Por isso o R$ esperado de 2026 deve ser lido como piso.
+
+## 3. O robô
+
+[`.github/workflows/monitor.yml`](.github/workflows/monitor.yml) roda **todo dia 5, às 06:17 de Brasília**
+(também manualmente, com a opção de refazer o backtest):
+
+1. baixa do CKAN da ANEEL os indicadores coletivos, as compensações e os limites ([`src/contrisk/download.py`](src/contrisk/download.py));
+2. monta a base mensal por conjunto e o painel de features até o último mês publicado;
+3. treina com todos os anos fechados e prevê o ano corrente (média de 3 sementes);
+4. regrava `reports/` (CSVs, `resumo.md`, `status.json`, figuras) e `powerbi/`, e faz commit se algo mudou.
+
+O mesmo comando roda local:
+
+```bash
+python scripts/robo.py                  # download + previsão + relatórios + Power BI
+python scripts/robo.py --sem-download   # usa data/raw
+python scripts/robo.py --backtest       # também refaz o backtest 2021-2025 (~8 min)
+```
+
+O CI ([`ci.yml`](.github/workflows/ci.yml)) roda `ruff` e `pytest` sem baixar dados.
+
+## 4. Modelo de dados para Power BI
+
+`powerbi/` traz um modelo estrela em Parquet (3,5 MB), regravado pelo robô todo mês:
+
+| Tabela | Grão | Chaves | Conteúdo |
+|---|---|---|---|
+| `fato_indicador_mensal` | conjunto × mês (2020+) | `conjunto_id`, `data_id` | DEC, FEC, consumidores, R$ de compensação |
+| `fato_previsao` | conjunto, ano corrente | `conjunto_id`, `data_id` (último mês com dado) | acumulados, limites, projeção linear, P(violar DEC/FEC), R$ esperado, folgas |
+| `dim_conjunto` | conjunto | `conjunto_id` | nome, distribuidora, consumidores, limites do ano |
+| `dim_distribuidora` | distribuidora | `agente` | sigla, destaque (EMS/EMT) |
+| `dim_tempo` | mês | `data_id` (AAAAMM) | ano, mês, data, trimestre |
+
+No Power BI: *Obter dados → Parquet* (ou a pasta `powerbi/` pelo conector de pasta), relacionar os fatos com
+`dim_conjunto` por `conjunto_id` e com `dim_tempo` por `data_id`, e `dim_conjunto` com `dim_distribuidora` por
+`agente`. Para ler direto do GitHub, use a URL *raw* de cada arquivo.
+
+## 5. Painel
+
+```bash
+pip install -e ".[app]"
+streamlit run app/app.py
+```
+
+Filtro por distribuidora, limiar de risco ajustável, ranking das distribuidoras, tabela de conjuntos
+priorizados e o DEC acumulado de cada conjunto, ano a ano, contra o limite.
+
+## Como funciona
+
+* **Alvo:** DEC (ou FEC) anual do conjunto, a soma dos 12 meses publicados, acima do limite anual da ANEEL.
+* **Features no mês de corte *m* do ano *y*:** acumulado até *m*, últimos 3 meses, compensações já pagas,
+  projeções linear e sazonal, perfil histórico do conjunto nos 5 anos anteriores (fração do ano realizada até
+  *m*, DEC do restante do ano), fechamentos e violações de *y-1* e *y-2*, limite de *y* e sua variação, porte e
+  distribuidora. Nada de *m+1* em diante (teste em [`tests/test_contrisk.py`](tests/test_contrisk.py)).
+* **Modelos:** LightGBM binário para cada indicador e LightGBM Tweedie para o R$ de compensação do restante do
+  ano, treinados com todos os meses de corte dos anos anteriores.
+* **Baselines:** extrapolação linear do acumulado, projeção pela fração sazonal histórica do conjunto e
+  "violou no ano passado". Para comparar calibração, cada regra é convertida em probabilidade por uma
+  regressão logística ajustada só no treino.
+
+As decisões de dados (composição do DEC publicado, anualização, compensações, limites) estão em
+[`docs/dados.md`](docs/dados.md).
+
+## Estrutura
+
+```
+src/contrisk/
+  download.py   download dos arquivos do CKAN da ANEEL
+  build.py      base mensal: DEC, FEC, consumidores, compensações e limites por conjunto
+  features.py   fechamento anual, acumulados e painel conjunto × ano × mês de corte (sem vazamento)
+  model.py      classificadores, modelo de compensação, baselines, backtest e métricas
+  report.py     relatórios, figuras, resumo.md e modelo estrela do Power BI
+scripts/robo.py   o robô (CLI usada pelo workflow mensal)
+app/app.py        painel Streamlit
+powerbi/          modelo estrela em Parquet
+reports/          saídas versionadas (CSV, JSON, Markdown, figuras)
+```
+
+## Reproduzir
+
+```bash
+pip install -e ".[dev]"
+python scripts/robo.py --backtest   # ~1 GB de download da ANEEL + backtest + previsão
+pytest
+```
+
+## Limitações
+
+* **Compensação individual, limite coletivo.** A relação entre violar o limite de DEC/FEC do conjunto e o R$
+  pago é empírica: quase metade das compensações sai de conjuntos dentro do limite. O modelo de compensação
+  aprende essa relação, mas ela não é uma regra regulatória.
+* **Dados revisados.** O backtest usa a base atual, em que meses passados podem ter sido revisados pelas
+  distribuidoras depois da publicação inicial. Em tempo real, o acumulado do ano pode estar incompleto ou ser
+  corrigido depois.
+* **Momento da compensação.** As compensações entram no mês em que foram informadas; pagamentos anuais e
+  trimestrais se concentram em meses específicos, o que deixa o R$ esperado mais incerto em cortes precoces.
+* **O total de compensações é subestimado** em ~15% no backtest, porque o valor cresceu ano a ano.
+* **"Violações esperadas"** soma probabilidades, e `p_viol_qualquer` supõe independência entre DEC e FEC (os
+  dois são correlacionados; o número é uma aproximação).
+* **Sem causas.** O monitor diz onde o risco está, não por quê; o diagnóstico de causas e de onde investir fica
+  com projetos como [`distribution-asset-risk`](https://github.com/CaioNepomuceno2/distribution-asset-risk)
+  e [`automation-impact`](https://github.com/CaioNepomuceno2/automation-impact).
+* Não trata impactos tarifários (por exemplo, componentes de qualidade na revisão tarifária).
+
+---
+Autor: **Caio Nepomuceno**. Dados públicos da ANEEL. Projeto independente, sem vínculo com a ANEEL ou com
+qualquer distribuidora.

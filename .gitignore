@@ -1,0 +1,11 @@
+data/raw/
+data/interim/
+__pycache__/
+*.pyc
+.venv/
+*.part
+logs/
+logs.txt
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

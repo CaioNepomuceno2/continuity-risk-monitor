@@ -1,0 +1,12 @@
+{
+  "ano": 2026,
+  "gerado_em": "2026-11-02 23:11 UTC",
+  "conjuntos": 3177,
+  "mes_dados_min": 6,
+  "mes_dados_max": 8,
+  "violacoes_dec_esperadas": 839.8383414105857,
+  "violacoes_fec_esperadas": 381.01948274029957,
+  "conjuntos_risco_alto": 831,
+  "compensacao_paga_rs": 596924862.28,
+  "compensacao_esperada_resto_rs": 486742568.9082892
+}
