@@ -40,6 +40,9 @@ o corte. A taxa média de violação do limite de DEC no período foi de 33%.
 
 ![backtest](reports/figures/01_backtest_brier.png)
 
+**O que isso significa:** em junho, de cada 20 conjuntos que o modelo aponta, 17 violam o limite até dezembro. A
+extrapolação acerta 15 em 20 e sinaliza mais conjuntos para achar um pouco mais de violações.
+
 ### 2026 (execução de 02/11/2026; dados até junho, julho ou agosto, conforme o conjunto)
 
 | | |
@@ -66,6 +69,94 @@ e o resumo que o robô publica todo mês, em [`reports/resumo.md`](reports/resum
 acima são da execução de 02/11/2026; os arquivos em `reports/` são regravados pelo robô a cada mês (e variam
 na terceira casa entre execuções, pelo paralelismo do LightGBM).
 
+A metodologia completa (definições, fórmulas, desenho do backtest, métricas e premissas) está em
+[`docs/metodologia.md`](docs/metodologia.md).
+
+## Na prática: o que muda para quem decide
+
+### O problema hoje
+
+O acompanhamento de DEC e FEC costuma ser feito numa planilha com o acumulado do ano e uma extrapolação até
+dezembro. Esse é exatamente o baseline "extrapolação linear" do backtest, e ele tem três problemas:
+
+* **Muito alarme falso cedo no ano.** Em março, a extrapolação sinaliza em média **1.473 conjuntos por ano** no
+  país, dos quais **565 não violam** (38%). Com tanto alerta, a equipe não consegue priorizar.
+* **O dado público chega tarde.** Na execução de 02/11/2026, os indicadores publicados iam até junho, julho ou
+  agosto, conforme o conjunto. Quem só olha a base da ANEEL perde de 3 a 5 meses.
+* **O limite coletivo não conta a história toda.** As compensações somam cerca de **R$ 1 bi por ano** no país, e
+  **46% delas saem de conjuntos que fecham o ano dentro do limite de DEC**, porque a compensação é calculada por
+  consumidor.
+
+### O que se ganha
+
+Médias por ano do backtest 2021-2025, limite de DEC, todas as distribuidoras
+([`reports/resumo_decisao.csv`](reports/resumo_decisao.csv)):
+
+| Ganho | Quanto | De onde vem o número |
+|---|---|---|
+| Menos alarme falso em março | 181 alarmes falsos por ano contra 565 da extrapolação (−68%), com 81% de precisão contra 61% | **Medido** no backtest (precisão média por ano, como na tabela acima) |
+| Menos alarme falso em junho | 153 contra 262 (−42%), com 85% de precisão contra 77% | **Medido** no backtest (idem) |
+| Lista acionável | em junho, 849 conjuntos sinalizados ainda estão **dentro do limite**, e 695 deles de fato violam até dezembro | **Medido** no backtest |
+| Antecedência | 9 meses com o alerta de março e 6 com o de junho | **Desenho:** mês do corte |
+| R$ em jogo | os conjuntos sinalizados em junho pagam R$ 235 mi de compensação de julho a dezembro, metade dos R$ 475 mi do país no período | **Medido:** compensação paga depois do corte |
+| Probabilidade utilizável | ECE de 0,03 contra 0,06 das regras: dá para somar probabilidades em "violações esperadas" e escolher o limiar | **Medido** no backtest |
+
+**O custo da troca:** o modelo é mais conservador. Em junho ele deixa passar 167 violações por ano, contra 127 da
+extrapolação; em março, 234 contra 122. Se deixar passar custa muito mais que inspecionar, basta baixar o
+limiar de alerta (ajustável no painel).
+
+O monitor não reduz o DEC sozinho. O ganho é saber cedo, com poucos alarmes falsos, **onde** as ações de
+manutenção, poda e reforço de equipe ainda podem mudar o fechamento do ano. Quanto cada ação evita não foi
+medido aqui; para religadores, o projeto
+[`automation-impact`](https://github.com/CaioNepomuceno2/automation-impact) mede o efeito.
+
+### Por que aplicar
+
+* **Compensação é automática e por consumidor.** Pelo PRODIST Módulo 8, a distribuidora compensa o consumidor
+  quando os indicadores individuais (DIC, FIC, DMIC, DICRI) passam do limite. A conta é de cerca de R$ 1 bi por
+  ano no país e R$ 38,9 mi esperados só na Energisa MT até dezembro de 2026.
+* **Os limites coletivos são públicos e comparados.** A ANEEL fixa limites de DEC e FEC por conjunto e publica o
+  desempenho de cada distribuidora.
+* **Ação leva tempo.** Poda, inspeção, manutenção corretiva e reposicionamento de equipes precisam de meses.
+  Um alerta em março ou junho cabe nesse prazo; um alerta em outubro, não.
+
+### Como aplicar (roteiro de adoção)
+
+1. **Trocar ou complementar os dados públicos por dados internos.**
+   * DEC e FEC apurados pelo sistema de qualidade ou pelo OMS, por dia ou semana, antes da publicação na ANEEL.
+     Isso elimina os 3 a 5 meses de atraso.
+   * **Telemetria de religadores e subestações:** cada abertura de religador ou disjuntor, com horário e
+     consumidores a jusante, dá o DEC parcial do mês corrente em tempo quase real. Também mostra quais
+     alimentadores e equipamentos estão gerando o DEC do conjunto, ou seja, onde agir.
+   * DIC e FIC por consumidor, para prever a compensação diretamente, já que quase metade dela sai de conjuntos
+     dentro do limite.
+2. **Calibrar:** o limiar de alerta (P ≥ 0,5 por padrão) deve refletir o custo de uma ação contra o custo de uma
+   violação. Com dados internos, retreinar com o mesmo código (`scripts/robo.py --backtest`) e conferir as
+   métricas.
+3. **Piloto de um semestre, em paralelo:** rodar o monitor de março a setembro ao lado do acompanhamento atual
+   e comparar as duas listas a cada mês. Os indicadores são alarmes falsos, violações perdidas, antecedência do
+   alerta e R$ de compensação nos conjuntos sinalizados.
+4. **Rotina:**
+   * o robô roda todo dia 5 no GitHub Actions, e o mesmo `scripts/robo.py` roda em qualquer servidor ou
+     agendador de RPA interno;
+   * no Power BI, basta conectar a pasta `powerbi/` (seção 4): a tabela `fato_previsao` já traz, por conjunto, a
+     probabilidade, a folga até o limite e o R$ esperado;
+   * quem usa: a regulação (metas e compensações), a operação e manutenção (onde mandar poda, inspeção e
+     equipes) e o planejamento (onde o problema se repete todo ano e pede investimento).
+5. **Critérios de sucesso:**
+   * violações evitadas entre os conjuntos sinalizados que receberam ação, comparados com sinalizados
+     parecidos que não receberam;
+   * alarmes falsos por mês;
+   * meses de antecedência;
+   * R$ de compensação contra o ano anterior.
+
+### Limites de uso
+
+* **Não diz a causa** nem qual ação tomar: diz onde o risco está.
+* **A probabilidade superestima** o risco em 5 a 10 pontos na faixa de 40% a 85%.
+* **O R$ esperado é piso:** no backtest, o total do país foi subestimado em cerca de 15%.
+* **Com dados públicos, o alerta chega atrasado** e pode mudar quando a distribuidora revisa meses passados.
+
 ## 1. O que o histórico mostra
 
 ![histórico](reports/figures/03_historico.png)
@@ -77,6 +168,9 @@ na terceira casa entre execuções, pelo paralelismo do LightGBM).
   ([`reports/compensacao_vs_violacao.csv`](reports/compensacao_vs_violacao.csv)). Ainda assim, o valor médio
   por conjunto cresce com o DEC: R$ 85 mil/ano nos conjuntos abaixo de 50% do limite e R$ 979 mil/ano nos
   acima de 2 vezes o limite.
+
+**O que isso significa:** olhar só o DEC do conjunto contra o limite deixa de fora quase metade da conta de
+compensações. Para gerenciar o R$, é preciso acompanhar também os indicadores individuais.
 
 ## 2. Previsão de compensação
 
@@ -91,6 +185,10 @@ Para o R$ de compensação de m+1 a dezembro, o modelo tem o menor erro absoluto
 
 No total do país, o modelo **subestima** o restante do ano em ~15% (o valor cresceu ano a ano no período).
 Por isso o R$ esperado de 2026 deve ser lido como piso.
+
+**O que isso significa:** em março, a extrapolação do pago até então erra quase o dobro do modelo (R$ 162 mil
+contra R$ 93 mil por conjunto), porque as compensações se concentram em certos meses. O modelo usa o perfil
+histórico de cada conjunto.
 
 ## 3. O robô
 
@@ -164,6 +262,8 @@ src/contrisk/
   model.py      classificadores, modelo de compensação, baselines, backtest e métricas
   report.py     relatórios, figuras, resumo.md e modelo estrela do Power BI
 scripts/robo.py   o robô (CLI usada pelo workflow mensal)
+scripts/resumo_decisao.py   alarmes falsos, conjuntos acionáveis e R$ por método (a partir do backtest)
+docs/             decisões de dados e metodologia
 app/app.py        painel Streamlit
 powerbi/          modelo estrela em Parquet
 reports/          saídas versionadas (CSV, JSON, Markdown, figuras)
@@ -174,6 +274,7 @@ reports/          saídas versionadas (CSV, JSON, Markdown, figuras)
 ```bash
 pip install -e ".[dev]"
 python scripts/robo.py --backtest   # ~1 GB de download da ANEEL + backtest + previsão
+python scripts/resumo_decisao.py    # indicadores de decisão a partir do backtest
 pytest
 ```
 
