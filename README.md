@@ -204,7 +204,8 @@ histórico de cada conjunto.
 **Cópia datada dos downloads.** A ANEEL regenera os arquivos (em 05/11/2026, os cinco maiores foram gerados de novo
 ao longo do dia) e as distribuidoras revisam meses passados. A cada execução, o robô guarda os arquivos brutos que
 mudaram desde a cópia anterior, para formar com o tempo a base "como foi publicada". Um ciclo completo tem **430 MB**
-baixados e **381 MB** guardados (CSV em gzip, Parquet idêntico ao original). Por isso a cópia vai para *assets* de uma
+baixados e **381 MB** guardados (CSV em gzip, Parquet idêntico ao original; medido em 06/11/2026, em arquivos que a
+ANEEL regenerou com todos os registros duplicados). Por isso a cópia vai para *assets* de uma
 release do GitHub (`dados-aneel-AAAAMMDD-HHMM`), e só um manifesto de uns 2 KB por mês
 ([`snapshots/manifesto.csv`](snapshots/manifesto.csv): data, sha256, tamanho) entra no git. **Tamanho esperado: cerca
 de 2,1 GB por ano se só os três arquivos que a ANEEL atualiza todo mês mudam, até cerca de 4,6 GB se mudam todos**,

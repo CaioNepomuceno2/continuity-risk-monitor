@@ -67,16 +67,16 @@ baixou ([`src/contrisk/snapshot.py`](../src/contrisk/snapshot.py)).
 | `indicadores-continuidade-coletivos-2020-2029.parquet` | 58,8 MB | 58,8 MB | idêntico |
 | `indicadores-continuidade-coletivos-compensacao-2010-2019.parquet` | 104,9 MB | 104,9 MB | idêntico |
 | `indicadores-continuidade-coletivos-compensacao-2020-2029.parquet` | 116,1 MB | 116,1 MB | idêntico |
-| `indicadores-continuidade-coletivos-limite.csv` | 52,4 MB | 4,2 MB | gzip |
+| `indicadores-continuidade-coletivos-limite.csv` | 52,4 MB | 4,0 MB | gzip |
 | `dominio-indicadores.csv` | 0,05 MB | 0,006 MB | gzip |
-| **Total** | **429,7 MB** | **381,5 MB** | |
+| **Total** | **429,7 MB** | **381,2 MB** | |
 
 **Escolha: *assets* de uma release do GitHub, com manifesto no git.**
 
 * **Git não serve:** uma cópia completa é 80 vezes o repositório inteiro (hoje com cerca de 5 MB), e Parquet não
   tem delta no git.
 * **Parquet fica como veio.** Ele já é comprimido: o gzip mediu 89% a 91% do tamanho original, e a cópia idêntica
-  byte a byte permite conferir o sha256 contra o que a ANEEL serviu. Só o CSV vai em gzip (8% do tamanho).
+  byte a byte permite conferir o sha256 contra o que a ANEEL serviu. Só o CSV vai em gzip (cerca de 8% do tamanho).
 * **Só entra o que mudou.** O robô compara o sha256 de cada arquivo com o último registro de
   [`snapshots/manifesto.csv`](../snapshots/manifesto.csv). Arquivo igual ao da cópia anterior não é guardado de novo.
 * **O manifesto** (data, arquivo, bytes, sha256, data de modificação no CKAN, nome do *asset*) é versionado no git
@@ -87,10 +87,13 @@ baixou ([`src/contrisk/snapshot.py`](../src/contrisk/snapshot.py)).
 
 | Cenário | Por mês | Por ano |
 |---|---|---|
-| Só os três arquivos que a ANEEL atualiza todo mês mudam (2020-2029 de indicadores e de compensações, e limites) | 179,1 MB | cerca de 2,1 GB |
-| Todos os arquivos mudam todo mês | 381,5 MB | cerca de 4,6 GB |
+| Só os três arquivos que a ANEEL atualiza todo mês mudam (2020-2029 de indicadores e de compensações, e limites) | 178,8 MB | cerca de 2,1 GB |
+| Todos os arquivos mudam todo mês | 381,2 MB | cerca de 4,6 GB |
 
-Mais uma cópia inicial completa (381,5 MB) na primeira execução. Os arquivos de 2010-2019 podem ou não mudar de
+Mais uma cópia inicial completa (381,2 MB) na primeira execução. **Esses tamanhos foram medidos em arquivos em que
+cada registro aparece duas vezes**, como a ANEEL os regenerou em 05/11/2026 (o fluxo de leitura trata a duplicação;
+ver a seção sobre compensações, no ramo `melhoria/dedup-linhas-aneel`). Se a ANEEL corrigir isso, os arquivos ficam
+menores e a estimativa cai. Os arquivos de 2010-2019 podem ou não mudar de
 um mês para o outro; o manifesto vai mostrar qual dos dois cenários vale, e `python scripts/snapshot.py resumo`
 soma o que já foi guardado por ano.
 
