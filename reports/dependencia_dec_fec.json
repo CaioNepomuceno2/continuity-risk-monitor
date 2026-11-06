@@ -1,0 +1,28 @@
+{
+  "rho": 0.600329908182947,
+  "adotar": true,
+  "usar_para_prever": 2026,
+  "anos_calibracao": [
+    2016,
+    2025
+  ],
+  "n_linhas_calibracao": 93456,
+  "rho_por_ano_de_teste": {
+    "2021": 0.5761654540116232,
+    "2022": 0.5874285418852864,
+    "2023": 0.5855271149903888,
+    "2024": 0.5921625720180589,
+    "2025": 0.6003860271250919
+  },
+  "anos_de_teste": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "anos_com_brier_menor": 4,
+  "brier_independencia": 0.07848317858786603,
+  "brier_copula": 0.07751290605344653,
+  "criterio": "adota a cópula se o Brier de P(DEC ou FEC) for menor em pelo menos 4 dos 5 anos de teste, pelo menos 1% menor no agregado, e se a log-verossimilhança conjunta agregada for maior"
+}

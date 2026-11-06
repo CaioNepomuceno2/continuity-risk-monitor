@@ -190,6 +190,47 @@ Por isso o R$ esperado de 2026 deve ser lido como piso.
 contra R$ 93 mil por conjunto), porque as compensações se concentram em certos meses. O modelo usa o perfil
 histórico de cada conjunto.
 
+## Probabilidade de violar DEC ou FEC
+
+`p_viol_qualquer` é a probabilidade de o conjunto violar o limite de DEC **ou** o de FEC. Os dois eventos andam
+juntos, então multiplicar as duas probabilidades como se fossem independentes superestima o "ou". Agora o robô usa
+uma cópula gaussiana com um único parâmetro, a correlação ρ entre os dois eventos, estimada por máxima
+verossimilhança nas previsões **fora da amostra** do backtest ([`src/contrisk/dependencia.py`](src/contrisk/dependencia.py)).
+Para o ano de teste *t*, só entram previsões de anos anteriores a *t*: 2016 a 2020 foram rodadas só para calibrar o
+ρ de 2021, e o ano *t* nunca entra no seu próprio ρ. Com ρ = 0 volta a fórmula antiga.
+
+Backtest 2021-2025, média por ano dos cortes de março, junho e setembro
+([`reports/backtest_dependencia.csv`](reports/backtest_dependencia.csv)):
+
+| | Independência | Cópula (ρ de 0,58 a 0,60) |
+|---|---|---|
+| Brier de P(DEC ou FEC) (menor é melhor) | 0,0785 | **0,0775** |
+| Erro de calibração (ECE) | 0,029 | **0,023** |
+| Log-verossimilhança conjunta por conjunto (maior é melhor) | −0,405 | **−0,392** |
+| Conjuntos que violam DEC ou FEC, esperado / observado | 3.524 / 3.287 (+7,2%) | 3.445 / 3.287 (+4,8%) |
+| Conjuntos que violam DEC e FEC, esperado / observado | 1.099 / 1.155 (−4,8%) | 1.178 / 1.155 (+2,0%) |
+| Sinalizados com P ≥ 50%: acertos / sinalizados | 2.768 / 3.278 (84,4%) | 2.737 / 3.204 (85,4%) |
+
+Brier por ano, independência → cópula: 2021 0,0850 → 0,0837; 2022 0,0773 → 0,0766; **2023 0,0759 → 0,0764 (pior)**;
+2024 0,0818 → 0,0800; 2025 0,0725 → 0,0709. A cópula tem Brier menor nos três cortes e em 13 das 15 combinações de
+ano e corte.
+
+* **O ganho é pequeno: −1,2% no Brier.** O critério de adoção foi escrito antes de rodar o backtest: Brier menor em
+  pelo menos 4 dos 5 anos, pelo menos 1% menor no agregado, e log-verossimilhança conjunta maior. A cópula passou e
+  virou o padrão, com margem estreita (exatamente 4 de 5 anos, e −1,24% contra o mínimo de 1%). O LightGBM varia de
+  uma execução para outra, então um novo `--backtest` pode reverter a decisão. O arquivo [`reports/dependencia_dec_fec.json`](reports/dependencia_dec_fec.json) guarda o ρ (0,60,
+  calibrado com 2016-2025) e a decisão; sem ele, ou com a decisão negativa, o robô volta à independência. O
+  `--backtest` regrava o arquivo.
+* **A probabilidade continua superestimada.** Entre 30% e 90% de P(DEC ou FEC), o previsto fica de 3 a 11 pontos
+  acima do observado ([`reports/backtest_dependencia_faixas.csv`](reports/backtest_dependencia_faixas.csv)). Isso vem
+  das probabilidades de DEC e de FEC, que a cópula não corrige.
+* **Efeito em 2026** (execução de 06/11/2026, com dados até agosto, setembro ou outubro; por isso as contagens são
+  bem menores que as da tabela de 02/11 acima, e o efeito da cópula é só a diferença de 10 conjuntos): os conjuntos
+  com P ≥ 50% passam de 579 para 569, e os que ainda estão dentro dos limites de DEC e de FEC, de 368 para 358.
+
+**O que isso significa:** a lista de risco alto fica um pouco menor e um pouco mais certa, e nada mais muda. O número
+de violações esperadas de DEC e de FEC é a soma das probabilidades de cada um e não depende de ρ.
+
 ## 3. O robô
 
 [`.github/workflows/monitor.yml`](.github/workflows/monitor.yml) roda **todo dia 5, às 06:17 de Brasília**
@@ -205,7 +246,7 @@ O mesmo comando roda local:
 ```bash
 python scripts/robo.py                  # download + previsão + relatórios + Power BI
 python scripts/robo.py --sem-download   # usa data/raw
-python scripts/robo.py --backtest       # também refaz o backtest 2021-2025 (~8 min)
+python scripts/robo.py --backtest       # também refaz o backtest 2021-2025 e a dependência DEC x FEC (~15 min)
 ```
 
 O CI ([`ci.yml`](.github/workflows/ci.yml)) roda `ruff` e `pytest` sem baixar dados. O teste de fumaça
@@ -263,6 +304,7 @@ src/contrisk/
   build.py      base mensal: DEC, FEC, consumidores, compensações e limites por conjunto
   features.py   fechamento anual, acumulados e painel conjunto × ano × mês de corte (sem vazamento)
   model.py      classificadores, modelo de compensação, baselines, backtest e métricas
+  dependencia.py   cópula gaussiana: P(violar DEC ou FEC) com a dependência estimada no backtest
   report.py     relatórios, figuras, resumo.md e modelo estrela do Power BI
 scripts/robo.py   o robô (CLI usada pelo workflow mensal)
 scripts/resumo_decisao.py   alarmes falsos, conjuntos acionáveis e R$ por método (a partir do backtest)
@@ -292,8 +334,12 @@ pytest
 * **Momento da compensação.** As compensações entram no mês em que foram informadas; pagamentos anuais e
   trimestrais se concentram em meses específicos, o que deixa o R$ esperado mais incerto em cortes precoces.
 * **O total de compensações é subestimado** em ~15% no backtest, porque o valor cresceu ano a ano.
-* **"Violações esperadas"** soma probabilidades, e `p_viol_qualquer` supõe independência entre DEC e FEC (os
-  dois são correlacionados; o número é uma aproximação).
+* **"Violações esperadas"** soma as probabilidades de DEC e de FEC. É uma boa contagem só se elas forem
+  calibradas, e no backtest superestimam: a soma ficou 5% acima do observado em DEC e 2% em FEC (média dos cinco
+  anos), e 11% a 12% em DEC em 2024 e 2025. A correlação entre DEC e FEC não afeta essa soma. Afeta
+  `p_viol_qualquer` (violar DEC **ou** FEC), que supunha independência e agora usa uma cópula com correlação
+  estimada no backtest. Isso melhorou a calibração (Brier −1,2%, ECE de 0,029 para 0,023), mas o número de
+  conjuntos que violam DEC ou FEC ainda sai 5% acima do observado (antes, 7%).
 * **Sem causas.** O monitor diz onde o risco está, não por quê; o diagnóstico de causas e de onde investir fica
   com projetos como [`distribution-asset-risk`](https://github.com/CaioNepomuceno2/distribution-asset-risk)
   e [`automation-impact`](https://github.com/CaioNepomuceno2/automation-impact).
