@@ -59,6 +59,7 @@ def main() -> None:
         med.to_csv(REPORTS / "backtest_metricas.csv", index=False)
         M.metricas_compensacao(prev_bt).to_csv(REPORTS / "backtest_compensacao.csv", index=False)
         prev_bt.to_parquet(INTERIM / "bt_prev.parquet", index=False)
+        prev_ext.to_parquet(INTERIM / "bt_prev_calibracao.parquet", index=False)
         R.fig_backtest(med, FIG)
         R.fig_calibracao(prev_bt, FIG)
         log.info("backtest:\n%s", med.round(3).to_string())
