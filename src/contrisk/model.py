@@ -11,6 +11,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, roc_auc_score
 
+from contrisk import dependencia as D
 from contrisk.features import feature_cols
 
 PARAMS = {"learning_rate": 0.05, "num_leaves": 31, "min_child_samples": 100, "subsample": 0.8,
@@ -145,8 +146,12 @@ def metricas_compensacao(prev: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
-def prever(p: pd.DataFrame, ano: int, seeds: int = 3) -> pd.DataFrame:
-    """Treina com todos os anos fechados antes de ``ano`` e prevê cada conjunto no último mês disponível."""
+def prever(p: pd.DataFrame, ano: int, seeds: int = 3, rho: float | None = None) -> pd.DataFrame:
+    """Treina com todos os anos fechados antes de ``ano`` e prevê cada conjunto no último mês disponível.
+
+    ``rho`` é a dependência entre violar DEC e violar FEC (``dependencia.carregar_rho``); sem ele,
+    P(DEC ou FEC) supõe independência.
+    """
     tr = p[(p.ano < ano) & (p.ano >= ano_inicio_treino(p))]
     te = p[p.ano == ano]
     te = te[te.mes_corte == te.groupby("conjunto_id").mes_corte.transform("max")].copy()
@@ -154,5 +159,91 @@ def prever(p: pd.DataFrame, ano: int, seeds: int = 3) -> pd.DataFrame:
     for alvo in ("viol_dec", "viol_fec"):
         te[f"p_{alvo}"] = np.mean([fit_classificador(tr, alvo, s).predict_proba(X)[:, 1] for s in range(seeds)], 0)
     te["pred_comp_resto_rs"] = np.mean([fit_compensacao(tr, s).predict(X) for s in range(seeds)], 0)
-    te["p_viol_qualquer"] = 1 - (1 - te.p_viol_dec) * (1 - te.p_viol_fec)  # aproximação (independência)
+    te["p_viol_qualquer"] = D.p_qualquer(te.p_viol_dec, te.p_viol_fec, rho or 0.0)
     return te
+
+
+# --------------------------------------------------------------------------- dependência DEC x FEC
+GANHO_MINIMO_BRIER = 0.01
+CRITERIO_DEPENDENCIA = ("adota a cópula se o Brier de P(DEC ou FEC) for menor em pelo menos 4 dos 5 anos de teste, "
+                        "pelo menos 1% menor no agregado, e se a log-verossimilhança conjunta agregada for maior")
+
+
+def _metricas_conjuntas(s: pd.DataFrame, rho: float, limiar: float = 0.5) -> dict:
+    """Qualidade de P(DEC ou FEC) e da contagem esperada de violações, com a dependência ``rho``."""
+    vd, vf = s.viol_dec.values.astype(float), s.viol_fec.values.astype(float)
+    pd_, pf = s.p_viol_dec.values, s.p_viol_fec.values
+    qualquer = D.p_qualquer(pd_, pf, rho)
+    ambos = D.p_ambos(pd_, pf, rho)
+    y = np.maximum(vd, vf)
+    alto = qualquer >= limiar
+    return {"n": len(s), "rho": rho, "taxa_qualquer": float(y.mean()),
+            "brier": float(brier_score_loss(y, qualquer)), "ece": ece(y, qualquer),
+            "loglik_conjunta": float(D.log_verossimilhanca(vd, vf, pd_, pf, rho).mean()),
+            "esperado_dec": float(pd_.sum()), "observado_dec": float(vd.sum()),
+            "esperado_fec": float(pf.sum()), "observado_fec": float(vf.sum()),
+            "esperado_qualquer": float(qualquer.sum()), "observado_qualquer": float(y.sum()),
+            "esperado_ambos": float(ambos.sum()), "observado_ambos": float((vd * vf).sum()),
+            "risco_alto": int(alto.sum()), "acertos_risco_alto": int((alto & (y == 1)).sum())}
+
+
+def backtest_dependencia(prev: pd.DataFrame, anos_teste: list[int], ano_calib_min: int):
+    """Independência contra cópula gaussiana para P(violar DEC ou FEC), sem vazamento.
+
+    ``prev`` são as previsões fora da amostra do backtest (``backtest``), de ``ano_calib_min`` em diante.
+    Para cada ano de teste *t*, ``rho`` é estimado só com os anos de ``ano_calib_min`` a *t-1* (cujos
+    resultados já eram conhecidos no início de *t*); o ano *t* nunca entra no seu próprio ``rho``.
+
+    Retorna ``(por_ano_corte, por_ano, faixas, info)``:
+
+    * ``por_ano_corte``: métricas por ano x mês de corte x método;
+    * ``por_ano``: o mesmo, com os cortes juntos, mais uma linha "todos" (agregado dos anos de teste);
+    * ``faixas``: calibração de P(DEC ou FEC) por faixa de probabilidade (cortes e anos juntos);
+    * ``info``: ``rho`` para prever o ano seguinte ao último de teste, critério e decisão de adoção.
+    """
+    prev = prev[prev.viol_dec.notna() & prev.viol_fec.notna()]
+    metodos = ("independencia", "copula")
+    por_corte, por_ano, pontos, rhos = [], [], [], {}
+    for t in anos_teste:
+        calib = prev[(prev.ano >= ano_calib_min) & (prev.ano < t)]
+        rhos[t] = D.estimar_rho(calib.viol_dec, calib.viol_fec, calib.p_viol_dec, calib.p_viol_fec)
+        te = prev[prev.ano == t]
+        for nome, rho in zip(metodos, (0.0, rhos[t]), strict=True):
+            for m, s in te.groupby("mes_corte"):
+                por_corte.append({"ano": t, "mes_corte": int(m), "metodo": nome, **_metricas_conjuntas(s, rho)})
+            por_ano.append({"ano": str(t), "metodo": nome, **_metricas_conjuntas(te, rho)})
+            pontos.append(pd.DataFrame({"metodo": nome, "p": D.p_qualquer(te.p_viol_dec.values,
+                                                                          te.p_viol_fec.values, rho),
+                                        "y": np.maximum(te.viol_dec.values, te.viol_fec.values)}))
+    por_corte, por_ano = pd.DataFrame(por_corte), pd.DataFrame(por_ano)
+
+    # agregado dos anos de teste: médias das taxas ponderadas por n; contagens como média por ano
+    medias = ["taxa_qualquer", "brier", "ece", "loglik_conjunta", "rho"]
+    contagens = [c for c in por_ano.columns if c.startswith(("esperado_", "observado_", "risco_alto", "acertos_"))]
+    agregado = []
+    for nome, g in por_ano.groupby("metodo"):
+        w = g.n / g.n.sum()
+        agregado.append({"ano": "todos", "metodo": nome, "n": int(g.n.sum()),
+                         **{c: float((g[c] * w).sum()) for c in medias}, **{c: float(g[c].mean()) for c in contagens}})
+    por_ano = pd.concat([por_ano, pd.DataFrame(agregado)], ignore_index=True)
+
+    pts = pd.concat(pontos, ignore_index=True)
+    pts["faixa"] = np.clip(np.digitize(pts.p.values, np.linspace(0, 1, 11)[1:-1]), 0, 9)
+    faixas = pts.groupby(["metodo", "faixa"]).agg(n=("y", "size"), previsto_medio=("p", "mean"),
+                                                  observado=("y", "mean")).reset_index()
+    faixas["faixa"] = faixas.faixa.map(lambda i: f"{i / 10:.1f}-{(i + 1) / 10:.1f}")
+
+    anual = por_ano[por_ano.ano != "todos"].pivot(index="ano", columns="metodo", values="brier")
+    melhoras = int((anual.copula < anual.independencia).sum())
+    ag = por_ano[por_ano.ano == "todos"].set_index("metodo")
+    adotar = bool(melhoras >= 4
+                  and ag.loc["copula", "brier"] <= (1 - GANHO_MINIMO_BRIER) * ag.loc["independencia", "brier"]
+                  and ag.loc["copula", "loglik_conjunta"] > ag.loc["independencia", "loglik_conjunta"])
+    final = prev[(prev.ano >= ano_calib_min) & (prev.ano <= max(anos_teste))]
+    info = {"rho": D.estimar_rho(final.viol_dec, final.viol_fec, final.p_viol_dec, final.p_viol_fec),
+            "adotar": adotar, "usar_para_prever": int(max(anos_teste)) + 1,
+            "anos_calibracao": [int(ano_calib_min), int(max(anos_teste))], "n_linhas_calibracao": len(final),
+            "rho_por_ano_de_teste": {int(t): r for t, r in rhos.items()}, "anos_de_teste": [int(t) for t in anos_teste],
+            "anos_com_brier_menor": melhoras, "brier_independencia": float(ag.loc["independencia", "brier"]),
+            "brier_copula": float(ag.loc["copula", "brier"]), "criterio": CRITERIO_DEPENDENCIA}
+    return por_corte, por_ano, faixas, info
