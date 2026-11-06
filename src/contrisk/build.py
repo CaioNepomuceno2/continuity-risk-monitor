@@ -43,12 +43,18 @@ def mensal(raw: Path, ano_min: int = 2011) -> pd.DataFrame:
 
 
 def compensacao_mensal(raw: Path, ano_min: int = 2011) -> pd.DataFrame:
-    """R$ pagos em compensações por conjunto x ano x mês."""
+    """R$ pagos em compensações por conjunto x ano x mês.
+
+    Registros idênticos em todas as colunas contam uma vez. Os arquivos que a ANEEL
+    regenerou em 05/11/2026 trouxeram cada registro duplicado, o que dobrava o R$ (ver docs/dados.md). Os
+    indicadores DEC, FEC e NumCon não precisam disso: ``max`` por chave já ignora repetições.
+    """
     return duckdb.sql(f"""
         select IdeConjUndConsumidoras as conjunto_id, AnoIndice as ano, NumPeriodoIndice as mes,
                sum(VlrIndiceEnviado) as compensacao_rs
-        from read_parquet({_lista(raw, COMP)}, union_by_name = true)
-        where SigIndicador like 'PG%' and AnoIndice >= {ano_min} and NumPeriodoIndice between 1 and 12
+        from (select distinct *
+              from read_parquet({_lista(raw, COMP)}, union_by_name = true)
+              where SigIndicador like 'PG%' and AnoIndice >= {ano_min} and NumPeriodoIndice between 1 and 12)
         group by all
     """).df()
 

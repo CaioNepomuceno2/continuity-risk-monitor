@@ -35,6 +35,19 @@ Os arquivos de 2020-2029 e de limites mudam todo mês; o robô sempre os baixa d
 * Soma de todos os indicadores `PG*` (R$ pagos por violação de DIC, FIC, DMIC, DICRI e DISE, nas apurações
   mensal, trimestral e anual), no mês em que foram informados.
 * O alvo de R$ é o pago de *m+1* a dezembro do ano *y*.
+* **Registros duplicados (arquivos de 05/11/2026).** Nos quatro arquivos Parquet que a ANEEL regenerou em
+  05/11/2026, cada registro aparece duas vezes, idêntico em todas as colunas (as cópias são metade das linhas).
+  Sem tratamento, a soma de `PG*` dobrava: o R$ pago em 2011 ia de R$ 400,3 mi para R$ 800,6 mi, e o total da base
+  (2011 a 2026), de R$ 10,6 bi para R$ 21,2 bi. `build.compensacao_mensal` conta uma vez cada linha idêntica; com
+  isso a base volta a reproduzir o `historico_violacoes.csv` commitado ao centavo de 2011 a 2023.
+* **O que sobra de diferença em 2024 e 2025 não está explicado.** A base limpa dá −R$ 0,38 mi em 2024 (−0,03%) e
+  +R$ 0,06 mi em 2025 contra o histórico commitado. Pode ser revisão real da ANEEL, e pode ser o tratamento de
+  registros que aparecem 4 vezes idênticos nos arquivos novos (e passam a contar uma vez): são 115 registros com
+  valor, R$ 1,2 mi no total, em 2024 (0,1% do ano), e R$ 0,6 mi em 2026; nenhum com valor em 2020-2023 e 2025. Sem o
+  arquivo anterior à regeneração, que não foi guardado, não dá para separar os dois efeitos. É um motivo a mais
+  para guardar cópias datadas dos downloads (ramo `melhoria/snapshots-brutos`).
+* Em compensações de 2020-2029, 170 chaves (conjunto, indicador, ano, mês) têm dois valores distintos, cada um
+  duplicado; os dois continuam contando. DEC, FEC e consumidores usam `max` por chave, que ignora repetições.
 * A compensação é por consumidor, não por conjunto. A relação com o limite coletivo é só empírica:
   [`reports/compensacao_vs_violacao.csv`](../reports/compensacao_vs_violacao.csv) mostra o R$ médio por faixa de
   DEC anual / limite em 2021-2025.
