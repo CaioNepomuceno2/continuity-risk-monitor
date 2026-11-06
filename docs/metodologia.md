@@ -72,8 +72,12 @@ anteriores completos:
 
 **Agregados do ano corrente:**
 
-* Violações esperadas: `Σ P(violar)` sobre os conjuntos.
-* `P(violar DEC ou FEC) = 1 − (1 − P_DEC)(1 − P_FEC)`, que supõe independência entre os dois (aproximação).
+* Violações esperadas: `Σ P(violar)` sobre os conjuntos. Por linearidade da esperança, é a contagem esperada se as
+  probabilidades forem calibradas, seja qual for a dependência entre DEC e FEC.
+* `P(violar DEC ou FEC) = P_DEC + P_FEC − P(DEC e FEC)`, com `P(DEC e FEC) = Φ2(Φ⁻¹(P_DEC), Φ⁻¹(P_FEC); ρ)`
+  (cópula gaussiana). `ρ` é estimado por máxima verossimilhança das quatro combinações (viola ou não DEC, viola ou
+  não FEC) nas previsões fora da amostra do backtest (seção 5). Com `ρ = 0` vale a fórmula da independência,
+  `1 − (1 − P_DEC)(1 − P_FEC)`.
 * Risco alto: `P(violar DEC ou FEC) ≥ 0,5`.
 
 ## 5. Desenho de validação
@@ -81,6 +85,14 @@ anteriores completos:
 **Origem móvel.** Para cada ano de teste *t* de 2021 a 2025, o modelo é treinado só com anos < *t* e avaliado nos
 cortes de março, junho e setembro de *t*. O teste `test_painel_usa_so_meses_ate_o_corte_e_anos_anteriores`
 coloca um evento enorme em novembro e confere que ele não aparece nas features de junho.
+
+**Dependência entre DEC e FEC** (`model.backtest_dependencia`). Para cada ano de teste *t*, `ρ` é estimado só com
+as previsões fora da amostra dos anos de 2016 a *t-1*. O backtest roda de 2016 a 2025, mas os anos de 2016 a 2020
+servem só para calibrar o `ρ` de 2021: as métricas dos modelos continuam sendo as de 2021 a 2025. Independência e
+cópula são comparadas sobre as mesmas probabilidades de DEC e de FEC (Brier e ECE de `P(DEC ou FEC)`, log-verossimilhança
+conjunta, contagens esperadas contra observadas). O critério de adoção foi fixado antes de rodar: a cópula vira o
+padrão se o Brier for menor em pelo menos 4 dos 5 anos e pelo menos 1% menor no agregado, e se a log-verossimilhança
+conjunta agregada for maior. O resultado e a decisão ficam em `reports/dependencia_dec_fec.json`, que o robô mensal lê.
 
 **Baselines** (a decisão é "sinalizar se a razão ao limite > 1"):
 
@@ -115,7 +127,7 @@ ano nos sinalizados.
 | Limiar de alerta | P ≥ 0,5 | ponto neutro; ajustável no painel | mais baixo: pega mais violações e dá mais alarmes falsos |
 | Histórico do perfil sazonal | 5 anos | equilíbrio entre estabilidade e mudança da rede | |
 | Cortes avaliados | março, junho e setembro | início, meio e fim do período útil para agir | |
-| Independência DEC × FEC | só em `P(DEC ou FEC)` | simplificação | superestima o risco conjunto quando os dois andam juntos |
+| Dependência DEC × FEC | cópula gaussiana, `ρ` ≈ 0,60 estimado no backtest | os dois eventos andam juntos (correlação de 0,58 a 0,60 depois de descontar o que os modelos explicam) | `ρ = 0` (independência) superestima `P(DEC ou FEC)`; a cópula reduziu o Brier em 1,2% |
 | Compensação no mês informado | sim | é como a ANEEL publica | apurações trimestrais e anuais concentram valores em certos meses |
 
 ## 7. Como interpretar os resultados

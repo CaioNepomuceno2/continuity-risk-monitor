@@ -1,6 +1,7 @@
 """Testes da probabilidade conjunta de violar DEC e FEC (cópula gaussiana calibrada no backtest)."""
 import json
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -185,3 +186,11 @@ def test_prever_usa_independencia_sem_rho_e_a_copula_com_rho(monkeypatch):
     esperado = float(D.p_qualquer(0.6, 0.5, 0.6))
     assert com.p_viol_qualquer.tolist() == pytest.approx([esperado] * 2) and esperado < 0.8
     assert com.p_viol_dec.tolist() == indep.p_viol_dec.tolist()      # as marginais não mudam
+
+
+def test_arquivo_de_dependencia_commitado_e_legivel_pelo_robo():
+    caminho = Path(__file__).parents[1] / "reports" / "dependencia_dec_fec.json"
+    info = json.loads(caminho.read_text(encoding="utf-8"))
+    assert -1 < info["rho"] < 1 and isinstance(info["adotar"], bool)
+    assert info["anos_calibracao"][1] < info["usar_para_prever"]           # só anos já fechados calibram o ano previsto
+    assert D.carregar_rho(caminho) == (info["rho"] if info["adotar"] else None)
