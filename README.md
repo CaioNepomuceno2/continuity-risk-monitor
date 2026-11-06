@@ -217,14 +217,16 @@ ano e corte.
 
 * **O ganho é pequeno: −1,2% no Brier.** O critério de adoção foi escrito antes de rodar o backtest: Brier menor em
   pelo menos 4 dos 5 anos, pelo menos 1% menor no agregado, e log-verossimilhança conjunta maior. A cópula passou e
-  virou o padrão. O arquivo [`reports/dependencia_dec_fec.json`](reports/dependencia_dec_fec.json) guarda o ρ (0,60,
+  virou o padrão, com margem estreita (exatamente 4 de 5 anos, e −1,24% contra o mínimo de 1%). O LightGBM varia de
+  uma execução para outra, então um novo `--backtest` pode reverter a decisão. O arquivo [`reports/dependencia_dec_fec.json`](reports/dependencia_dec_fec.json) guarda o ρ (0,60,
   calibrado com 2016-2025) e a decisão; sem ele, ou com a decisão negativa, o robô volta à independência. O
   `--backtest` regrava o arquivo.
 * **A probabilidade continua superestimada.** Entre 30% e 90% de P(DEC ou FEC), o previsto fica de 3 a 11 pontos
   acima do observado ([`reports/backtest_dependencia_faixas.csv`](reports/backtest_dependencia_faixas.csv)). Isso vem
   das probabilidades de DEC e de FEC, que a cópula não corrige.
-* **Efeito em 2026** (execução de 06/11/2026, dados até agosto, setembro ou outubro): os conjuntos com P ≥ 50%
-  passam de 579 para 569, e os que ainda estão dentro dos limites de DEC e de FEC, de 368 para 358.
+* **Efeito em 2026** (execução de 06/11/2026, com dados até agosto, setembro ou outubro; por isso as contagens são
+  bem menores que as da tabela de 02/11 acima, e o efeito da cópula é só a diferença de 10 conjuntos): os conjuntos
+  com P ≥ 50% passam de 579 para 569, e os que ainda estão dentro dos limites de DEC e de FEC, de 368 para 358.
 
 **O que isso significa:** a lista de risco alto fica um pouco menor e um pouco mais certa, e nada mais muda. O número
 de violações esperadas de DEC e de FEC é a soma das probabilidades de cada um e não depende de ρ.
