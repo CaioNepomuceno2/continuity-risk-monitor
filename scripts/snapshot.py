@@ -21,12 +21,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("snapshot")
 
 
-def publicar(dry_run: bool) -> int:
+def publicar(dry_run: bool, gh: str = "gh") -> int:
     pasta = snapshot.pasta_pendente(SNAPSHOTS)
     if pasta is None:
         log.info("nada a publicar: nenhuma pasta preparada em %s", SNAPSHOTS)
         return 0
-    cmd = snapshot.publicar(pasta, MANIFESTO, dry_run=dry_run)
+    cmd = snapshot.publicar(pasta, MANIFESTO, dry_run=dry_run, gh=gh)
     linhas = snapshot.ler_manifesto(pasta / snapshot.LOTE) or snapshot.ler_manifesto(
         pasta / (snapshot.LOTE + ".publicado"))
     mb = sum(int(r["bytes_asset"]) for r in linhas) / 1e6
@@ -59,9 +59,10 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("publicar")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--gh", default="gh", help="executável da CLI do GitHub (para ensaios com um gh de mentira)")
     sub.add_parser("resumo")
     args = ap.parse_args()
-    return publicar(args.dry_run) if args.cmd == "publicar" else resumo()
+    return publicar(args.dry_run, args.gh) if args.cmd == "publicar" else resumo()
 
 
 if __name__ == "__main__":

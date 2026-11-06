@@ -142,3 +142,19 @@ def test_script_publicar_em_dry_run_mostra_comando_e_linhas(tmp_path, monkeypatc
     saida = capsys.readouterr().out
     assert "gh release create dados-aneel-20261205-0917" in saida and "linhas que entrariam" in saida
     assert not (tmp_path / "manifesto.csv").exists()
+
+
+def test_script_publicar_de_verdade_chama_o_gh_indicado_e_atualiza_o_manifesto(tmp_path, monkeypatch, capsys):
+    spec = importlib.util.spec_from_file_location("snapshot_cli2", Path(__file__).parents[1] / "scripts" / "snapshot.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(cli, "SNAPSHOTS", tmp_path / "saida")
+    monkeypatch.setattr(cli, "MANIFESTO", tmp_path / "manifesto.csv")
+    S.preparar(_raw(tmp_path), tmp_path / "saida", tmp_path / "manifesto.csv", agora=T1, meta=META)
+    chamadas = _gh_ok(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["snapshot.py", "publicar", "--gh", "meu-gh"])
+    assert cli.main() == 0
+    assert chamadas[0][0] == "meu-gh" and chamadas[0][1:4] == ["release", "create", "dados-aneel-20261205-0917"]
+    assert len(S.ler_manifesto(tmp_path / "manifesto.csv")) == len(ARQUIVOS)
+    monkeypatch.setattr("sys.argv", ["snapshot.py", "resumo"])
+    assert cli.main() == 0 and "2026: 6 arquivo(s) guardados" in capsys.readouterr().out
