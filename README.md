@@ -195,10 +195,21 @@ histórico de cada conjunto.
 [`.github/workflows/monitor.yml`](.github/workflows/monitor.yml) roda **todo dia 5, às 06:17 de Brasília**
 (também manualmente, com a opção de refazer o backtest):
 
-1. baixa do CKAN da ANEEL os indicadores coletivos, as compensações e os limites ([`src/contrisk/download.py`](src/contrisk/download.py));
+1. baixa do CKAN da ANEEL os indicadores coletivos, as compensações e os limites ([`src/contrisk/download.py`](src/contrisk/download.py))
+   e guarda uma cópia datada do que mudou desde a execução anterior (parágrafo abaixo);
 2. monta a base mensal por conjunto e o painel de features até o último mês publicado;
 3. treina com todos os anos fechados e prevê o ano corrente (média de 3 sementes);
 4. regrava `reports/` (CSVs, `resumo.md`, `status.json`, figuras) e `powerbi/`, e faz commit se algo mudou.
+
+**Cópia datada dos downloads.** A ANEEL regenera os arquivos (em 05/11/2026, os cinco maiores foram gerados de novo
+ao longo do dia) e as distribuidoras revisam meses passados. A cada execução, o robô guarda os arquivos brutos que
+mudaram desde a cópia anterior, para formar com o tempo a base "como foi publicada". Um ciclo completo tem **430 MB**
+baixados e **381 MB** guardados (CSV em gzip, Parquet idêntico ao original). Por isso a cópia vai para *assets* de uma
+release do GitHub (`dados-aneel-AAAAMMDD-HHMM`), e só um manifesto de uns 2 KB por mês
+([`snapshots/manifesto.csv`](snapshots/manifesto.csv): data, sha256, tamanho) entra no git. **Tamanho esperado: cerca
+de 2,1 GB por ano se só os três arquivos que a ANEEL atualiza todo mês mudam, até cerca de 4,6 GB se mudam todos**,
+mais 381 MB na primeira cópia. A escolha, as medições e as proteções do robô estão em
+[`docs/dados.md`](docs/dados.md).
 
 O mesmo comando roda local:
 
@@ -261,12 +272,15 @@ src/contrisk/
   features.py   fechamento anual, acumulados e painel conjunto × ano × mês de corte (sem vazamento)
   model.py      classificadores, modelo de compensação, baselines, backtest e métricas
   report.py     relatórios, figuras, resumo.md e modelo estrela do Power BI
+  snapshot.py   cópia datada dos downloads brutos (hash, gzip do CSV, release e manifesto)
 scripts/robo.py   o robô (CLI usada pelo workflow mensal)
+scripts/snapshot.py   publica a cópia datada dos dados brutos (assets de release + manifesto)
 scripts/resumo_decisao.py   alarmes falsos, conjuntos acionáveis e R$ por método (a partir do backtest)
 docs/             decisões de dados e metodologia
 app/app.py        painel Streamlit
 powerbi/          modelo estrela em Parquet
 reports/          saídas versionadas (CSV, JSON, Markdown, figuras)
+snapshots/        manifesto das cópias datadas dos downloads brutos (os arquivos ficam em releases)
 ```
 
 ## Reproduzir
@@ -285,7 +299,8 @@ pytest
   aprende essa relação, mas ela não é uma regra regulatória.
 * **Dados revisados.** O backtest usa a base atual, em que meses passados podem ter sido revisados pelas
   distribuidoras depois da publicação inicial. Em tempo real, o acumulado do ano pode estar incompleto ou ser
-  corrigido depois.
+  corrigido depois. O robô agora guarda uma cópia datada de cada download, mas o backtest "como foi publicado"
+  só será possível depois de alguns meses de cópias: ainda não foi feito.
 * **Momento da compensação.** As compensações entram no mês em que foram informadas; pagamentos anuais e
   trimestrais se concentram em meses específicos, o que deixa o R$ esperado mais incerto em cortes precoces.
 * **O total de compensações é subestimado** em ~15% no backtest, porque o valor cresceu ano a ano.

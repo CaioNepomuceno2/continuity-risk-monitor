@@ -17,9 +17,11 @@ from contrisk import features as F
 from contrisk import model as M
 from contrisk import report as R
 from contrisk.download import download
+from contrisk.snapshot import preparar_sem_falhar
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW, INTERIM, REPORTS = ROOT / "data" / "raw", ROOT / "data" / "interim", ROOT / "reports"
+SNAPSHOTS, MANIFESTO = ROOT / "data" / "snapshots", ROOT / "snapshots" / "manifesto.csv"
 FIG, PBI = REPORTS / "figures", ROOT / "powerbi"
 ANOS_TESTE, CORTES_RELATORIO = [2021, 2022, 2023, 2024, 2025], [3, 6, 9]
 
@@ -37,6 +39,8 @@ def main() -> None:
 
     if not args.sem_download:
         download(RAW, atualizar=True)
+        # cópia datada do que a ANEEL publicou; nunca derruba o robô (a publicação é um passo à parte do workflow)
+        preparar_sem_falhar(RAW, SNAPSHOTS, MANIFESTO)
     base = build.base_mensal(RAW)
     painel = F.painel(base)
     ano = int(base.ano.max())
