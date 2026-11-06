@@ -208,7 +208,10 @@ python scripts/robo.py --sem-download   # usa data/raw
 python scripts/robo.py --backtest       # também refaz o backtest 2021-2025 (~8 min)
 ```
 
-O CI ([`ci.yml`](.github/workflows/ci.yml)) roda `ruff` e `pytest` sem baixar dados.
+O CI ([`ci.yml`](.github/workflows/ci.yml)) roda `ruff` e `pytest` sem baixar dados. O teste de fumaça
+([`tests/test_fumaca.py`](tests/test_fumaca.py)) passa um conjunto sintético de 40 conjuntos, gerado no próprio
+teste nos formatos de arquivo da ANEEL, por todo o núcleo (carregar, montar o painel, estimar as probabilidades e
+prever a compensação), em poucos segundos e sem rede.
 
 ## 4. Modelo de dados para Power BI
 
